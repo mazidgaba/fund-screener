@@ -101,4 +101,4 @@ The CLI exports a JSON with metadata, last N daily metrics (including indicators
 
 ## License
 
-MIT
+Gulam Mazid
