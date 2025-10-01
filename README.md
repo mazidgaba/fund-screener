@@ -1,0 +1,104 @@
+# Financial Analyzer
+
+A production-grade financial analysis pipeline that fetches prices and fundamentals, validates with Pydantic, computes technical indicators and fundamental ratios, detects Golden/Death Cross signals, persists to SQLite with idempotent operations, and exposes a Typer-based CLI with JSON export.
+
+## Project Structure
+
+```
+financial_analyzer/
+├── src/
+│   ├── __init__.py
+│   ├── config.py
+│   ├── models.py
+│   ├── data_fetcher.py
+│   ├── processor.py
+│   ├── signals.py
+│   ├── database.py
+│   └── main.py
+├── tests/
+│   ├── conftest.py
+│   ├── test_processor.py
+│   └── test_signals.py
+├── config.yaml.example
+├── pyproject.toml
+└── README.md
+```
+
+## Quick Start
+
+- Python 3.9+
+- Create a virtual environment and install deps (uv or pip):
+
+```bash
+pip install -e .
+```
+
+Run CLI examples:
+
+```bash
+python -m src.main --ticker NVDA --output nvda_analysis.json
+python -m src.main --ticker AAPL --output aapl_analysis.json
+python -m src.main --ticker RELIANCE.NS --output reliance_analysis.json
+python -m src.main --ticker TCS.NS --output tcs_analysis.json
+python -m src.main --ticker SWIGGY.NS --output swiggy_analysis.json
+python -m src.main --ticker HYUNDAI.NS --output hyundai_analysis.json
+python -m src.main --ticker URBANCOMP.NS --output urbancomp_analysis.json
+```
+
+Copy `config.yaml.example` to `config.yaml` if you want to override defaults.
+
+## Configuration
+
+`config.yaml.example`:
+
+```yaml
+database:
+  path: "financial_data.db"
+logging:
+  level: "INFO"
+data_settings:
+  historical_period: "5y"
+  min_trading_days_for_sma: 200
+```
+
+- `historical_period`: yfinance history period (e.g., 1y, 2y, 5y, max)
+- `min_trading_days_for_sma`: minimum history required for 200SMA; for shorter series, logic uses `min_periods` gracefully.
+
+## Design Decisions
+
+- Forward-fill fundamentals: Quarterly/annual fundamentals are point-in-time until next filing. Forward-fill when merging with daily prices is a common, reasonable assumption for analysis.
+- Missing fundamentals: yfinance is often sparse. Fallback order: quarterly balance sheet -> annual balance sheet -> info dict basic metrics. If still missing, compute synthetic/derived metrics where feasible, leave others null. All validated via Pydantic with optional fields.
+- SMA on short histories: Use `min_periods` so recent IPOs still compute 50SMA/200SMA when possible. Signals require both SMAs on a day; otherwise no signal.
+- Idempotency: SQLite tables use UNIQUE constraints and UPSERTs to avoid duplicates and allow reruns.
+- Multi-market tickers: The CLI accepts tickers as-is (e.g., `RELIANCE.NS`, `NVDA`). No hardcoded formats.
+
+## Database Schema
+
+- `tickers (id, symbol, market, name, currency)` with UNIQUE(symbol)
+- `daily_metrics (id, ticker_symbol, date, open, high, low, close, volume, sma_50, sma_200, high_52w, pct_from_52w_high, book_value_per_share, price_to_book, enterprise_value)` with UNIQUE(ticker_symbol, date)
+- `signal_events (id, ticker_symbol, date, signal_type)` with UNIQUE(ticker_symbol, date, signal_type)
+
+## Testing
+
+Run tests:
+
+```bash
+pytest -q
+```
+
+Covers:
+- SMA calculations
+- Golden/Death cross detection edge cases
+- Basic validation of models
+
+## Output JSON
+
+The CLI exports a JSON with metadata, last N daily metrics (including indicators), detected signals, and data quality notes (fallbacks used, missing fields, etc.), validated via Pydantic models before writing.
+
+## Notes on Data Quality
+
+- yfinance may throttle or return partial data; the pipeline logs warnings and proceeds with partial fundamentals. Price history is primary; indicators compute from price history.
+
+## License
+
+MIT
